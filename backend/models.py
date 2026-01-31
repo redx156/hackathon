@@ -56,11 +56,31 @@ def load_model(weights_path: str = None):
 # Global model instance (loaded once at startup)
 _model = None
 _device = None
+_gradcam = None  # Grad-CAM singleton to prevent hook accumulation
+
+# Path to trained weights (relative to project root)
+TRAINED_WEIGHTS_PATH = "checkpoints/best_model.pth"
 
 
 def get_model():
     """Get the global model instance (singleton pattern)"""
     global _model, _device
     if _model is None:
-        _model, _device = load_model()
+        import os
+        if os.path.exists(TRAINED_WEIGHTS_PATH):
+            _model, _device = load_model(weights_path=TRAINED_WEIGHTS_PATH)
+        else:
+            print(f"⚠️  Trained weights not found at {TRAINED_WEIGHTS_PATH}, using ImageNet weights")
+            _model, _device = load_model()
     return _model, _device
+
+
+def get_gradcam():
+    """Get the global GradCAM instance (singleton pattern to prevent hook accumulation)"""
+    global _gradcam
+    if _gradcam is None:
+        from .gradcam import GradCAM
+        model, _ = get_model()
+        _gradcam = GradCAM(model, model.layer4)
+        print("✅ Grad-CAM initialized (hooks registered once)")
+    return _gradcam

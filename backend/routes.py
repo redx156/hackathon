@@ -1,14 +1,10 @@
-"""
-FastAPI Routes for Pneumonia Detection API
-- /predict: Main endpoint for X-ray analysis
-- /health: Health check endpoint
-"""
+
 
 from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 
-from .models import get_model
-from .gradcam import GradCAM, create_heatmap_overlay
+from .models import get_model, get_gradcam
+from .gradcam import create_heatmap_overlay
 from .utils import preprocess_image, numpy_to_base64, base64_to_data_uri
 from .schemas import PredictionResponse, HealthResponse
 
@@ -60,8 +56,8 @@ async def predict(file: UploadFile = File(...)):
         model, device = get_model()
         tensor = tensor.to(device)
         
-        # Initialize Grad-CAM with last conv layer (layer4 in ResNet18)
-        gradcam = GradCAM(model, model.layer4)
+        # Get Grad-CAM singleton (hooks registered once at startup)
+        gradcam = get_gradcam()
         
         # Generate prediction and heatmap
         cam, raw_confidence = gradcam.generate(tensor)
