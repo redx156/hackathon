@@ -1,13 +1,9 @@
-"""
-Pydantic Schemas for API Request/Response
-"""
 
 from pydantic import BaseModel
 from typing import Optional
 
 
 class PredictionResponse(BaseModel):
-    """Response schema for /predict endpoint"""
     
     # Prediction result: "Normal" or "Pneumonia"
     prediction: str
@@ -27,12 +23,14 @@ class PredictionResponse(BaseModel):
     # Device used for inference
     device: str
     
+    # Image quality flag (informational, not decision-altering)
+    low_image_quality: bool = False
+    
     # Additional info for doctors
     note: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
-    """Response schema for /health endpoint"""
     status: str
     model_loaded: bool
     device: str

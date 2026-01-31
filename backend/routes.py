@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from .models import get_model, get_gradcam
 from .gradcam import create_heatmap_overlay
-from .utils import preprocess_image, numpy_to_base64, base64_to_data_uri
+from .utils import preprocess_image, numpy_to_base64, base64_to_data_uri, check_image_quality
 from .schemas import PredictionResponse, HealthResponse
 
 
@@ -52,6 +52,9 @@ async def predict(file: UploadFile = File(...)):
         # Preprocess image
         tensor, original_image = preprocess_image(image_bytes)
         
+        # Run image quality check (lightweight, before inference)
+        quality = check_image_quality(original_image)
+        
         # Get model (loaded once, cached)
         model, device = get_model()
         tensor = tensor.to(device)
@@ -87,6 +90,10 @@ async def predict(file: UploadFile = File(...)):
                 f"This is an AI screening - clinical judgment should prevail."
             )
         
+        # Append quality warning if applicable (informational only)
+        if quality["warning"]:
+            note = note + " " + quality["warning"]
+        
         return PredictionResponse(
             prediction=prediction,
             confidence=round(raw_confidence, 4),
@@ -94,6 +101,7 @@ async def predict(file: UploadFile = File(...)):
             heatmap_image=heatmap_base64,
             heatmap_data_uri=heatmap_data_uri,
             device=str(device),
+            low_image_quality=quality["is_low_quality"],
             note=note
         )
     

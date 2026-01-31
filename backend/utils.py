@@ -108,6 +108,107 @@ def base64_to_data_uri(base64_str: str, mime_type: str = "image/png") -> str:
     return f"data:{mime_type};base64,{base64_str}"
 
 
+# ============ IMAGE QUALITY CHECKS ============
+# Lightweight, rule-based heuristics to flag potentially unreliable scans
+
+# Thresholds (conservative to avoid over-flagging clinical images)
+BLUR_THRESHOLD = 100.0  # Laplacian variance below this = blurry
+CONTRAST_THRESHOLD = 30.0  # Grayscale std below this = low contrast
+
+
+def check_blur(image: np.ndarray) -> tuple[bool, float]:
+    """
+    Detect blur using Laplacian variance.
+    
+    Lower variance = more blur (fewer edges detected).
+    Medical X-rays should have clear lung boundaries.
+    
+    Returns:
+        is_blurry: True if image appears blurry
+        score: Laplacian variance (higher = sharper)
+    """
+    # Convert to grayscale if needed
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = image
+    
+    # Compute Laplacian variance (edge detection sensitivity)
+    laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+    variance = laplacian.var()
+    
+    is_blurry = variance < BLUR_THRESHOLD
+    return is_blurry, float(variance)
+
+
+def check_contrast(image: np.ndarray) -> tuple[bool, float]:
+    """
+    Detect low contrast using grayscale intensity spread.
+    
+    Low std = pixel values clustered (low contrast).
+    X-rays should have good contrast between lung/tissue/bone.
+    
+    Returns:
+        is_low_contrast: True if image has poor contrast
+        score: Standard deviation of pixel intensities
+    """
+    # Convert to grayscale if needed
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = image
+    
+    # Compute intensity spread
+    std = float(np.std(gray))
+    
+    is_low_contrast = std < CONTRAST_THRESHOLD
+    return is_low_contrast, std
+
+
+def check_image_quality(image: np.ndarray) -> dict:
+    """
+    Run all quality checks on an image.
+    
+    Args:
+        image: RGB or grayscale numpy array
+    
+    Returns:
+        dict with:
+            - is_low_quality: True if any check failed
+            - issues: List of detected problems
+            - blur_score: Laplacian variance
+            - contrast_score: Intensity std
+            - warning: Human-readable warning (or None if quality OK)
+    """
+    is_blurry, blur_score = check_blur(image)
+    is_low_contrast, contrast_score = check_contrast(image)
+    
+    issues = []
+    if is_blurry:
+        issues.append("blurry/motion artifact")
+    if is_low_contrast:
+        issues.append("low contrast")
+    
+    is_low_quality = len(issues) > 0
+    
+    warning = None
+    if is_low_quality:
+        issue_text = " and ".join(issues)
+        warning = (
+            f"⚠️ Image quality notice: {issue_text} detected. "
+            f"Prediction confidence may be less reliable. "
+            f"Consider re-scanning if clinically feasible."
+        )
+    
+    return {
+        "is_low_quality": is_low_quality,
+        "issues": issues,
+        "blur_score": round(blur_score, 2),
+        "contrast_score": round(contrast_score, 2),
+        "warning": warning
+    }
+
+
 # ============ TEST BLOCK ============
 if __name__ == "__main__":
     print("🧪 Testing utils.py preprocessing pipeline...\n")
