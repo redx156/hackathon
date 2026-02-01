@@ -1,0 +1,83 @@
+# ===================================================================
+# Docker Compose for Pneumonia Detection Full Stack
+# ===================================================================
+# Services:
+#   - db: PostgreSQL 15 (optional, backend works without it)
+#   - backend: FastAPI + PyTorch on port 8000
+#   - frontend: Vite + React on port 5173
+# ===================================================================
+
+services:
+  # -----------------------------------------------------------------
+  # PostgreSQL Database (optional - not actively used yet)
+  # -----------------------------------------------------------------
+  db:
+    image: postgres:15
+    container_name: pneumonia_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-pneumonia_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-pneumonia_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # FastAPI Backend
+  # -----------------------------------------------------------------
+  # Key fixes:
+  # 1. No runtime pip install - all deps in Dockerfile
+  # 2. depends_on uses service_started (not service_healthy) 
+  #    so backend doesn't crash if DB is unused
+  # 3. DATABASE_URL is optional - backend works without DB
+  # -----------------------------------------------------------------
+  backend:
+    container_name: pneumonia_backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-pneumonia_db}
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_started  # Not service_healthy - backend works without DB
+    restart: unless-stopped
+    # NO command override - uses CMD from Dockerfile
+
+  # -----------------------------------------------------------------
+  # React Frontend (Vite)
+  # -----------------------------------------------------------------
+  # Key fixes:
+  # 1. VITE_API_BASE_URL set for Docker networking
+  # 2. Uses volume for node_modules to speed up rebuilds
+  # 3. Runs on port 5173 with --host for container access
+  # -----------------------------------------------------------------
+  frontend:
+    image: node:20-slim
+    container_name: pneumonia_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      # CRITICAL: Use 'localhost:8000' for browser (not 'backend:8000')
+      # Browser runs on host, not inside Docker network
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    command: sh -c "npm install && npm run dev -- --host"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  frontend_node_modules:
